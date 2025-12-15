@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マップ</title>
+    <script type="text/javascript" src="https://cdn.geolonia.com/v1/embed?geolonia-api-key=6119938f125646fab99f462ddbd8a1dc"></script>
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; font-family: "Helvetica Neue", Arial, sans-serif; }
+        
+        /* --- 左上：検索・操作エリア --- */
+        .search-container {
+            position: absolute; top: 20px; left: 20px; z-index: 1000;
+            background: white; padding: 10px; border-radius: 4px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            display: flex; gap: 8px; flex-wrap: wrap; max-width: 90%; align-items: center;
+        }
+        input[type="text"] { padding: 8px; width: 160px; border: 1px solid #ccc; border-radius: 4px;}
+        button { padding: 8px 12px; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px; }
+        
+        #search-btn { background-color: #007bff; }
+        #gps-btn { background-color: #6c757d; }
+        #gps-btn.active { background-color: #dc3545; }
+        
+        /* 案内開始ボタン（初期は非表示） */
+        #nav-start-btn { background-color: #28a745; display: none; }
+        /* 案内中止ボタンのデザイン */
+        #nav-start-btn.cancel-mode { background-color: #d93025; }
+        
+        /* 移動手段選択 */
+        .mode-select { display: flex; gap: 10px; align-items: center; margin-left: 5px; font-size: 14px; }
+        .mode-select label { cursor: pointer; display: flex; align-items: center; gap: 3px; }
+
+        /* --- 左下：速度パネル --- */
+        #speed-panel {
+            position: absolute; bottom: 30px; left: 20px; z-index: 1000;
+            background-color: white; border: 2px solid #000; padding: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3); min-width: 280px;
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        .status-row { display: flex; justify-content: space-around; text-align: center; border-bottom: 1px solid #ccc; padding-bottom: 10px; }
+        .speed-item { display: flex; flex-direction: column; align-items: center; }
+        .speed-label { font-size: 12px; color: #555; margin-bottom: 5px; }
+        .speed-value-area { font-size: 24px; font-weight: bold; color: #000; }
+        .unit { font-size: 12px; font-weight: normal; margin-left: 2px; }
+        
+        .road-search-area { display: flex; flex-direction: column; gap: 8px; }
+        .road-input-group { display: flex; gap: 5px; }
+        #road-input { flex-grow: 1; }
+        #road-search-btn { background-color: #17a2b8; }
+        .search-result-display { text-align: center; background-color: #f0f0f0; padding: 8px; border-radius: 4px; }
+        .result-label { font-size: 11px; color: #666; }
+        .result-value { font-size: 20px; font-weight: bold; color: #d93025; }
+
+        /* --- 右側パネル --- */
+        .side-panel {
+            width: 340px; background: #f8f9fa; border-left: 1px solid #ddd;
+            padding: 20px; display: none; overflow-y: auto; box-sizing: border-box;
+            height: 100vh; position: absolute; right: 0; top: 0; z-index: 999;
+        }
+        .side-panel.active { display: block; }
+        .main-container { display: flex; height: 100vh; width: 100%; position: relative; }
+        #map { width: 100%; height: 100%; }
+
+        /* ナビ情報パネル */
+        .nav-info-box { border: 2px solid #333; background: white; padding: 15px; margin-bottom: 15px; }
+        .nav-header-row { display: flex; justify-content: space-between; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .nav-time-item { text-align: center; }
+        .nav-time-label { font-size: 12px; font-weight: bold; }
+        .nav-time-value { font-size: 18px; font-weight: bold; }
+        
+        .nav-section-title { font-size: 14px; font-weight: bold; margin-top: 15px; margin-bottom: 5px; color: #333; border-left: 4px solid #007bff; padding-left: 5px; }
+        .nav-text-large { font-size: 16px; font-weight: bold; text-align: center; margin-bottom: 10px; }
+        .highway-flow { text-align: center; font-size: 15px; margin: 10px 0; line-height: 1.6; background: #f0f8ff; padding: 10px; border-radius: 4px;}
+        .highway-flow span { display: block; font-weight: bold; }
+        .arrow-down { font-size: 18px; color: #666; margin: 5px 0; }
+        
+        .sapa-list-box { border: 1px solid #ccc; padding: 10px; margin-top: 5px; font-size: 13px; background: #fff; max-height: 120px; overflow-y: auto; }
+        
+        .instruction-box { 
+            margin-top: 15px; padding: 15px; background: #fff3cd; 
+            border: 2px solid #ffecb5; border-radius: 8px;
+            font-size: 22px; font-weight: bold; text-align: center; color: #333;
+        }
+        .instruction-sub { font-size: 14px; color: #666; margin-top: 5px; text-align: center; font-weight: normal; }
+
+        /* 駅情報 */
+        .station-name { font-size: 24px; font-weight: bold; border-bottom: 2px solid #28a745; margin-bottom: 10px;}
+        .line-card { background: white; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .train-time-row { display: flex; justify-content: space-between; font-size: 14px; }
+        .time { font-weight: bold; color: #d93025; }
+        .note { font-size: 12px; color: #666; margin-top: 10px; background: #eee; padding: 10px; }
+
+        /* ======================================= */
+        /* ★★ スマートフォン向けデザインの調整 (幅768px以下) ★★ */
+        /* ======================================= */
+        @media screen and (max-width: 768px) {
+        /* 1. 地図とサイドパネルを縦並びにする */
+            .main-container {
+                flex-direction: column; /* 横並びから縦並びへ */
+            }
+
+        /* 2. サイドパネルを上部または下部に出現させ、幅を画面いっぱいに */
+        .side-panel {
+            width: 100%; /* 幅を画面いっぱいに */
+            height: auto; /* 高さは内容に合わせて調整 */
+            max-height: 50vh; /* 最大高さをビューポートの半分に制限（地図が見えるように）*/
+            position: relative; /* absoluteをやめて、地図の上か下に配置 */
+            border-left: none; /* 左側の線を削除 */
+            border-bottom: 1px solid #ddd;
+            order: 1; /* 地図より上に表示 */
+        }
+    
+        /* 3. 地図を画面幅いっぱいに、残りの高さを利用 */
+        #map {
+            width: 100%; 
+            height: 100vh; /* 画面全体の高さ */
+            /* サイドパネルが上部に配置されるため、地図は残りの高さを占める */
+            order: 2;
+        }
+    
+        /* 4. 左上の検索・操作エリアの位置調整 */
+        .search-container {
+            top: auto;
+            bottom: 0; /* 画面下部に固定 */
+            left: 0;
+            width: 100%;
+            max-width: 100%;
+            padding: 8px;
+            border-radius: 0;
+            gap: 5px;
+            box-shadow: 0 -2px 6px rgba(0,0,0,0.3);
+            flex-wrap: nowrap; /* ボタンが多い場合は横スクロールしても良いように */
+            overflow-x: auto;
+        }
+    
+        /* 5. 左下の速度パネルの位置調整 */
+        #speed-panel {
+            bottom: 50px; /* 検索コンテナの少し上に移動 */
+            left: 10px;
+            min-width: 90%;
+            width: auto;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        /* 6. スポット検索のドロップダウンとボタンを縦並びに */
+        .spot-search-section > div[style*="flex"] {
+            flex-direction: column;
+        }
+        #spot-select {
+            width: 100%; /* 画面幅いっぱいに広げる */
+        }
+    }
+    </style>
+</head>
+<body>
+
+    <div class="search-container">
+        <input type="text" id="address-input" placeholder="入力">
+        <button id="search-btn">検索</button>
+        <button id="gps-btn">現在地ON</button>
+        
+        <div class="mode-select">
+            <label><input type="radio" name="travel-mode" value="driving" checked> 車</label>
+            <label><input type="radio" name="travel-mode" value="walking"> 徒歩</label>
+        </div>
+
+        <button id="nav-start-btn">経路案内スタート</button>
+    </div>
+
+    <div id="speed-panel">
+        <div class="status-row">
+            <div class="speed-item">
+                <div class="speed-label">現在地の法定速度</div>
+                <div class="speed-value-area">
+                    <span id="limit-speed">--</span><span class="unit">km/h</span>
+                </div>
+            </div>
+            <div class="speed-item">
+                <div class="speed-label">今の速度</div>
+                <div class="speed-value-area">
+                    <span id="current-speed">0</span><span class="unit">km/h</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="road-search-area">
+            <div class="road-input-group">
+                <input type="text" id="road-input" placeholder="道路名 (例: 環七)">
+                <button id="road-search-btn">道路検索</button>
+            </div>
+            <div class="search-result-display">
+                <div class="result-label">検索した道路の法定速度</div>
+                <div class="result-value" id="searched-road-speed">-- km/h</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div id="map"></div>
+        
+        <div id="side-panel-area" class="side-panel">
+            <div id="train-info-content"></div>
+
+            <div id="nav-info-content" style="display:none;">
+                <div class="nav-info-box">
+                    <div class="nav-header-row">
+                        <div class="nav-time-item">
+                            <div class="nav-time-label">予想所要時間</div>
+                            <div class="nav-time-value" id="nav-duration">--分</div>
+                        </div>
+                        <div class="nav-time-item">
+                            <div class="nav-time-label">到着予想</div>
+                            <div class="nav-time-value" id="nav-arrival">--:--</div>
+                        </div>
+                    </div>
+
+
+                    <div class="spot-search-section" style="margin-bottom: 15px; border-bottom: 1px solid #f50808; padding-bottom: 10px;">
+                        <div class="nav-section-title" style="margin-top:0;">ルート沿い検索</div>
+                        <div style="display:flex; gap:5px;">
+                            <select id="spot-select" style="padding:5px; flex-grow:1; border:1px solid #f50808; border-radius:4px;">
+                                <option value="convenience_store">コンビニ</option>
+                                <option value="post_office">郵便局</option>
+                                <option value="parking">駐車場</option>
+                                <option value="fuel">ガソリンスタンド</option>
+                                <option value="toilets">トイレ</option>
+                            </select>
+                            <button id="spot-search-btn" style="background:#6f42c1;">検索</button>
+                        </div>
+                        <div id="spot-msg" style="font-size:12px; color:#d93025; margin-top:5px;"></div>
+                        <div id="spot-list" style="margin-top:5px; max-height:150px; overflow-y:auto; font-size:13px;"></div>
+                    </div>
+
+
+
+                    <div class="nav-section-title">今回使用する道路</div>
+                    <div class="nav-text-large" id="nav-road-type">--</div>
+
+                    <div id="highway-info-area" style="display:none;">
+                        <div class="nav-section-title">高速道路の利用</div>
+                        <div class="highway-flow">
+                            <span style="font-size:12px; color:#666;">入口 (推奨ルート上)</span>
+                            <span id="highway-entry" style="color:#007bff; font-size:18px;">--</span>
+                            <div class="arrow-down">↓</div>
+                            <span style="font-size:12px; color:#666;">出口</span>
+                            <span id="highway-exit" style="color:#007bff; font-size:18px;">--</span>
+                        </div>
+                        
+                        <div class="nav-section-title">ルート上の主なSA/PA</div>
+                        <div class="sapa-list-box" id="nav-sapa-list">
+                            データなし
+                        </div>
+                    </div>
+
+                    <div class="nav-section-title">・現在の案内</div>
+                    <div class="instruction-box" id="nav-instruction">
+                        案内開始待ち
+                    </div>
+                    <div class="instruction-sub" id="nav-instruction-sub"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 変数定義 ---
+        let currentMarker = null; // 目的地ピン
+        let userMarker = null;    // 現在地ピン
+        let watchId = null;
+        let lastRoadSearchTime = 0;
+        const ROAD_SEARCH_INTERVAL_MS = 5000;
+        let currentRouteId = null;
+        let currentRouteGeoJson = null;
+        let spotMarkers = [];
+        
+        let userLatLon = null;   // [lon, lat]
+        let searchLatLon = null; // [lon, lat]
+        
+        // ナビ用変数
+        let isNavigating = false;
+        let routeSteps = []; // ルートの全ステップ
+        let currentStepIndex = 0;
+
+        // 地図初期化
+        const map = new geolonia.Map({
+            container: '#map',
+            style: 'geolonia/basic',
+            center: [139.767125, 35.681236],
+            zoom: 12
+        });
+
+        // --- イベントリスナー ---
+        document.getElementById('search-btn').addEventListener('click', searchLocation);
+        document.getElementById('gps-btn').addEventListener('click', toggleGPS);
+        document.getElementById('road-search-btn').addEventListener('click', searchRemoteRoad);
+        document.getElementById('nav-start-btn').addEventListener('click', handleNavigationClick); // 変更: トグル機能付き関数へ
+        
+        document.getElementById('address-input').addEventListener('keypress', (e) => { if(e.key === 'Enter') searchLocation(); });
+        document.getElementById('road-input').addEventListener('keypress', (e) => { if(e.key === 'Enter') searchRemoteRoad(); });
+
+        document.getElementById('spot-search-btn').addEventListener('click', searchSpotsAlongRoute);
+
+        // --- 画面調整 ---
+        function adjustMapView() {
+            if (isNavigating) return; // ナビ中は自動調整しない
+            const points = [];
+            if (userLatLon) points.push(userLatLon);
+            if (searchLatLon) points.push(searchLatLon);
+            if (points.length === 0) return;
+            if (points.length === 1) {
+                map.flyTo({ center: points[0], zoom: 16 });
+                return;
+            }
+            const bounds = new geolonia.LngLatBounds();
+            points.forEach(p => bounds.extend(p));
+            map.fitBounds(bounds, { padding: 80, maxZoom: 16 });
+        }
+
+        // --- 1. 駅検索 ---
+        function searchLocation() {
+            const query = document.getElementById('address-input').value;
+            if (!query) return;
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&accept-language=ja`;
+            
+            fetch(url).then(r => r.json()).then(data => {
+                if (data && data.length > 0) {
+                    const res = data[0];
+                    const lat = parseFloat(res.lat);
+                    const lon = parseFloat(res.lon);
+                    
+                    searchLatLon = [lon, lat];
+                    if (currentMarker) currentMarker.remove();
+                    currentMarker = new geolonia.Marker({ color: "#FF0000" }).setLngLat([lon, lat]).addTo(map);
+                    
+                    document.getElementById('nav-info-content').style.display = 'none';
+                    document.getElementById('train-info-content').style.display = 'block';
+                    searchNearestStationAndLines(lon, lat);
+                    adjustMapView();
+                    
+                    document.getElementById('nav-start-btn').style.display = 'inline-block';
+                } else {
+                    alert("場所が見つかりませんでした");
+                }
+            }).catch(e => console.error(e));
+        }
+
+        // --- 2. 道路検索 ---
+        function searchRemoteRoad() {
+            const now = Date.now(); 
+            if (now - lastRoadSearchTime < ROAD_SEARCH_INTERVAL_MS) {
+                alert("少し待ってから再度検索してください");
+                return;
+            }
+            lastRoadSearchTime = now;
+
+            const query = document.getElementById('road-input').value;
+            const resultDisplay = document.getElementById('searched-road-speed');
+            if (!query) return;
+            
+            resultDisplay.innerHTML = "検索中...";
+            resultDisplay.style.color = "#999";
+
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&accept-language=ja`;
+
+            fetch(url).then(r => r.json()).then(data => {
+                if (data && data.length > 0) {
+                    const res = data[0];
+                    const lat = parseFloat(res.lat);
+                    const lon = parseFloat(res.lon);
+
+                    searchLatLon = [lon, lat];
+                    if (currentMarker) currentMarker.remove();
+                    currentMarker = new geolonia.Marker({ color: "#007bff" }).setLngLat([lon, lat]).addTo(map);
+
+                    fetchAndEstimateSpeed(lat, lon, resultDisplay, 'remote');
+                    adjustMapView();
+                    
+                    document.getElementById('nav-start-btn').style.display = 'inline-block';
+                } else {
+                    resultDisplay.innerText = "不明";
+                    alert("見つかりませんでした");
+                }
+            }).catch(e => {
+                console.error(e);
+                resultDisplay.innerText = "エラー";
+            });
+        }
+
+        // --- 3. GPS追跡 ---
+        function toggleGPS() {
+            const btn = document.getElementById('gps-btn');
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+                userLatLon = null;
+                btn.innerText = "現在地ON";
+                btn.classList.remove('active');
+                if(userMarker) userMarker.remove();
+                userMarker = null;
+                stopNavigation(); // GPS切ったらナビも終了
+            } else {
+                if (!navigator.geolocation) { alert("GPS非対応"); return; }
+                btn.innerText = "追跡中...";
+                btn.classList.add('active');
+
+                watchId = navigator.geolocation.watchPosition(
+                    (position) => {
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        const speedKmh = Math.floor((position.coords.speed || 0) * 3.6);
+                        
+                        userLatLon = [lon, lat];
+
+                        if (!userMarker) {
+                            const el = document.createElement('div');
+                            el.style.width = '16px'; el.style.height = '16px';
+                            el.style.backgroundColor = '#4285F4'; el.style.borderRadius = '50%';
+                            el.style.border = '3px solid white'; el.style.boxShadow = '0 0 5px rgba(0,0,0,0.5)';
+                            userMarker = new geolonia.Marker(el).setLngLat([lon, lat]).addTo(map);
+                        } else {
+                            userMarker.setLngLat([lon, lat]);
+                        }
+                        
+                        if (!isNavigating && searchLatLon) adjustMapView();
+                        else if (!isNavigating) map.panTo([lon, lat]);
+
+                        document.getElementById('current-speed').innerText = speedKmh;
+                        updateSpeedLimit(lat, lon);
+
+                        if (isNavigating && routeSteps.length > 0) {
+                            updateNavigationInstruction(lat, lon);
+                        }
+                    },
+                    (error) => console.error("GPSエラー:", error),
+                    { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+                );
+            }
+        }
+
+        // --- 4. 経路案内制御 (開始/中止の分岐) ---
+        function handleNavigationClick() {
+            if (isNavigating) {
+                stopNavigation();
+            } else {
+                startNavigation();
+            }
+        }
+
+        function stopNavigation() {
+            isNavigating = false;
+            routeSteps = [];
+            currentStepIndex = 0;
+
+            // ルート消去
+            if (currentRouteId && map.getLayer(currentRouteId)) map.removeLayer(currentRouteId);
+            if (map.getSource('route-source')) map.removeSource('route-source');
+
+            // ボタンリセット
+            const btn = document.getElementById('nav-start-btn');
+            btn.innerText = "経路案内スタート";
+            btn.classList.remove('cancel-mode');
+            btn.disabled = false;
+
+            // パネルリセット
+            document.getElementById('side-panel-area').classList.remove('active');
+
+
+            clearSpotMarkers();
+            currentRouteGeoJson = null;
+            document.getElementById('spot-list').innerHTML = "";
+            document.getElementById('spot-msg').innerText = "";
+
+            
+            alert("案内を中止しました。");
+            adjustMapView();
+        }
+
+        async function startNavigation() {
+            if (!userLatLon) { alert("まず「現在地ON」ボタンを押してください。"); return; }
+            if (!searchLatLon) { alert("目的地を検索してください。"); return; }
+
+            const btn = document.getElementById('nav-start-btn');
+            btn.innerText = "計算中...";
+            btn.disabled = true;
+
+            const modeElements = document.getElementsByName('travel-mode');
+            let selectedMode = 'driving';
+            for (const el of modeElements) { if (el.checked) selectedMode = el.value; }
+
+            // 右パネル表示
+            const sidePanel = document.getElementById('side-panel-area');
+            document.getElementById('train-info-content').style.display = 'none';
+            document.getElementById('nav-info-content').style.display = 'block';
+            sidePanel.classList.add('active');
+
+            if (currentRouteId && map.getLayer(currentRouteId)) map.removeLayer(currentRouteId);
+            if (map.getSource('route-source')) map.removeSource('route-source');
+            
+            const osrmUrl = "https://router.project-osrm.org/route/v1/";
+            const profile = selectedMode === 'driving' ? 'driving' : 'foot';
+            const coords = `${userLatLon[0]},${userLatLon[1]};${searchLatLon[0]},${searchLatLon[1]}`;
+            // steps=trueに加え、annotations=trueで詳細情報を取得試行
+            const reqUrl = `${osrmUrl}${profile}/${coords}?overview=full&geometries=geojson&steps=true`;
+
+            try {
+                const res = await fetch(reqUrl);
+                if (!res.ok) throw new Error("API Error");
+                const data = await res.json();
+
+                if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
+                    alert("経路が見つかりませんでした。");
+                    btn.innerText = "経路案内スタート";
+                    btn.disabled = false;
+                    return;
+                }
+
+                const route = data.routes[0];
+                currentRouteId = `route-${profile}`;
+
+                currentRouteGeoJson = route.geometry;
+                
+                drawRoute(route.geometry, selectedMode === 'driving');
+                
+                isNavigating = true;
+                routeSteps = route.legs[0].steps;
+                currentStepIndex = 0;
+
+                updateNavInfoPanel(route, selectedMode);
+
+                // ボタンを中止モードへ
+                btn.innerText = "案内中止";
+                btn.classList.add('cancel-mode');
+
+            } catch (err) {
+                console.error(err);
+                alert("経路検索エラー（API混雑）。時間をおいて試してください。");
+                btn.innerText = "経路案内スタート";
+            }
+            btn.disabled = false;
+        }
+
+        // ナビパネル更新 (時間補正・IC判定強化)
+        function updateNavInfoPanel(route, mode) {
+            // ★時間の補正ロジック★
+            // OSRMは渋滞なしの理想値のため、実情に合わせて補正係数をかける
+            // 車(driving): 1.8倍 (信号待ち・渋滞考慮)
+            // 徒歩(foot): 1.1倍 (信号待ち考慮)
+            const trafficFactor = (mode === 'driving') ? 1.8 : 1.1; 
+            
+            const rawDurationSec = route.duration;
+            const adjustedDurationSec = rawDurationSec * trafficFactor;
+            const durationMin = Math.ceil(adjustedDurationSec / 60);
+            
+            document.getElementById('nav-duration').innerText = `約${durationMin}分`;
+            
+            const now = new Date();
+            now.setMinutes(now.getMinutes() + durationMin);
+            const arrivalStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
+            document.getElementById('nav-arrival').innerText = arrivalStr;
+
+            // 高速道路情報
+            const highwayArea = document.getElementById('highway-info-area');
+            let useHighway = false;
+            let entryIC = "不明";
+            let exitIC = "不明";
+            let sapaList = [];
+
+            if (mode === 'driving') {
+                const steps = route.legs[0].steps;
+                let onHighway = false;
+
+                for (let i = 0; i < steps.length; i++) {
+                    const step = steps[i];
+                    const name = step.name || "";
+                    const ref = step.ref || "";
+                    const maneuver = step.maneuver.type;
+                    
+                    // 高速道路判定
+                    // OSRMのrotaryやmotorwayタグを見るのが確実だが、簡易的に名前やrefで判断
+                    const isHighwayStep = (name.includes("高速") || name.includes("自動車道") || name.includes("有料道路") || ref.startsWith("E") || ref.startsWith("C"));
+                    
+                    // 一般道 -> 高速道路 の切り替わり検知 (入口IC判定)
+                    if (isHighwayStep && !onHighway) {
+                        onHighway = true;
+                        useHighway = true;
+                        
+                        // このステップの名前が高速道路名なら、その前のステップの場所や名前がICの可能性が高い
+                        // より具体的に「〇〇IC」という文字を探す、または直前の道路名をIC名候補とする
+                        if (i > 0) {
+                            // 1つ前のステップの目的地、またはマニューバのmodifierから推測
+                            // 例: "Turn left onto Tomei Expressway" -> Location is entry
+                            // 無料APIではIC名ズバリのフィールドがないため、前後の文脈や地点名を表示
+                            const prevName = steps[i-1].name;
+                            // 名前がなければ「入口あり」とする
+                            entryIC = (prevName && prevName !== "") ? prevName + " (接続)" : name + " 入口付近";
+                            
+                            // もし現在のステップ名に「IC」が含まれていればそれを使う
+                            if (name.includes("IC") || name.includes("JCT")) entryIC = name;
+                        } else {
+                            entryIC = name + " (起点)";
+                        }
+                    }
+                    
+                    // 高速道路 -> 一般道 の切り替わり検知 (出口IC判定)
+                    if (onHighway && !isHighwayStep && maneuver !== 'merge') {
+                        // 高速でなくなった瞬間、その直前のステップが出口
+                        const prevStep = steps[i-1];
+                        exitIC = prevStep.name || prevStep.ref || "出口付近";
+                        // もし現在のステップ（一般道）の名前に出口方向が含まれていれば
+                        if(step.maneuver.modifier && step.maneuver.modifier.includes("exit")) {
+                             exitIC = name + " 方面";
+                        }
+                        onHighway = false; 
+                    }
+
+                    if (name.includes("SA") || name.includes("PA")) {
+                        if (!sapaList.includes(name)) sapaList.push(name);
+                    }
+                }
+            }
+
+            if (mode === 'walking') {
+                document.getElementById('nav-road-type').innerText = "一般道のみ";
+                highwayArea.style.display = 'none';
+            } else {
+                if (useHighway) {
+                    document.getElementById('nav-road-type').innerText = "高速道路を利用";
+                    highwayArea.style.display = 'block';
+                    document.getElementById('highway-entry').innerText = entryIC;
+                    document.getElementById('highway-exit').innerText = exitIC;
+                    
+                    const sapaBox = document.getElementById('nav-sapa-list');
+                    if (sapaList.length > 0) {
+                        sapaBox.innerHTML = sapaList.map(name => `<div>• ${name}</div>`).join('');
+                    } else {
+                        sapaBox.innerText = "情報なし (API制限)";
+                    }
+                } else {
+                    document.getElementById('nav-road-type').innerText = "一般道のみ";
+                    highwayArea.style.display = 'none';
+                }
+            }
+
+            updateNavigationInstructionText(0);
+        }
+
+        // ★案内指示の具体化ロジック★
+        function updateNavigationInstruction(lat, lon) {
+            if (currentStepIndex >= routeSteps.length) {
+                document.getElementById('nav-instruction').innerText = "到着しました";
+                return;
+            }
+
+            const nextStep = routeSteps[currentStepIndex];
+            const stepLoc = nextStep.maneuver.location; 
+            
+            const dLat = (stepLoc[1] - lat) * 111320;
+            const dLon = (stepLoc[0] - lon) * (40075000 * Math.cos(lat * Math.PI / 180) / 360);
+            const dist = Math.sqrt(dLat*dLat + dLon*dLon);
+
+            // 30m以内で通過判定
+            if (dist < 30 && currentStepIndex < routeSteps.length - 1) {
+                currentStepIndex++;
+                updateNavigationInstructionText(currentStepIndex);
+            } else {
+                const subText = document.getElementById('nav-instruction-sub');
+                subText.innerText = `次のポイントまで 約${Math.round(dist)}m`;
+            }
+        }
+
+        function updateNavigationInstructionText(index) {
+            const step = routeSteps[index];
+            // 最後のステップなら到着
+            if (index >= routeSteps.length - 1) {
+                document.getElementById('nav-instruction').innerText = "目的地周辺";
+                document.getElementById('nav-instruction-sub').innerText = "運転お疲れ様でした";
+                return;
+            }
+            
+            const nextStep = routeSteps[index + 1]; // 次のアクションを見る
+            const type = nextStep.maneuver.type;
+            const modifier = nextStep.maneuver.modifier || "";
+            let text = "";
+
+            // OSRMのタイプを詳細な日本語に変換
+            // end of road = 突き当たり (T字路)
+            // fork = 分岐
+            // turn = 交差点など
+            
+            const dirMap = {
+                'left': '左折', 'right': '右折', 'slight left': '斜め左へ', 'slight right': '斜め右へ',
+                'sharp left': '鋭角に左へ', 'sharp right': '鋭角に右へ', 'straight': '直進', 'uturn': 'Uターン'
+            };
+            const direction = dirMap[modifier] || modifier;
+
+            if (type === 'turn') {
+                text = `次の交差点を${direction}`;
+            } else if (type === 'end of road') {
+                text = `突き当たりを${direction}`;
+            } else if (type === 'fork') {
+                text = `分岐を${direction}`;
+            } else if (type === 'merge') {
+                text = `${direction}方向へ合流`;
+            } else if (type === 'roundabout' || type === 'rotary') {
+                text = `ロータリーを出る`;
+            } else if (type === 'new name') {
+                text = "道なりに進む";
+            } else if (type === 'ramp') { // ランプ＝高速の入り口やJCT
+                text = `ランプを${direction} (高速/JCT)`;
+            } else if (type === 'arrive') {
+                text = "まもなく到着";
+            } else {
+                // その他 (continueなど)
+                text = (direction && direction !== "") ? `${direction}方向へ` : "道なりに進む";
+            }
+
+            document.getElementById('nav-instruction').innerText = text;
+        }
+
+        function drawRoute(geometry, isDriving) {
+            map.addSource('route-source', {
+                type: 'geojson',
+                data: { type: 'Feature', properties: {}, geometry: geometry }
+            });
+            map.addLayer({
+                id: currentRouteId, type: 'line', source: 'route-source',
+                layout: { 'line-join': 'round', 'line-cap': 'round' },
+                paint: {
+                    'line-color': isDriving ? '#0074D9' : '#2ECC40', 
+                    'line-width': 6, 'line-opacity': 0.8
+                }
+            });
+            const bounds = new geolonia.LngLatBounds();
+            geometry.coordinates.forEach(c => bounds.extend(c));
+            map.fitBounds(bounds, { padding: 50 });
+        }
+
+        async function fetchAndEstimateSpeed(lat, lon, displayElement, isTarget) {
+            displayElement.innerHTML = (isTarget === 'remote') ? "..." : "--";
+            const query = `[out:json];way(around:30, ${lat}, ${lon})["highway"];out tags;`;
+            const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+            let speed = null;
+
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`HTTP Error`);
+                const text = await res.text();
+                if (text.trim().startsWith('<')) throw new Error("XML Error");
+                const data = JSON.parse(text);
+
+                if (data.elements.length > 0) {
+                    const t = data.elements[0].tags;
+                    if (t.maxspeed) speed = t.maxspeed;
+                    else if (t.highway) {
+                        if(['motorway','trunk'].includes(t.highway)) speed="80";
+                        else if(['primary'].includes(t.highway)) speed="60";
+                        else if(['secondary'].includes(t.highway)) speed="50";
+                        else speed="30";
+                    }
+                }
+
+                if (speed) {
+                    if (isTarget === 'remote') displayElement.innerHTML = `${speed} km/h <span style='font-size:10px'>(推定)</span>`;
+                    else displayElement.innerText = speed;
+                    displayElement.style.color = (isTarget === 'remote') ? "#d93025" : "#000";
+                } else {
+                    displayElement.innerHTML = (isTarget === 'remote') ? "不明" : "--";
+                }
+            } catch (e) {
+                console.error("速度APIエラー:", e);
+                displayElement.innerHTML = (isTarget === 'remote') ? "取得失敗" : "--";
+            }
+        }
+
+        function updateSpeedLimit(lat, lon) {
+            const el = document.getElementById('limit-speed');
+            fetchAndEstimateSpeed(lat, lon, el, 'current');
+        }
+
+        function searchNearestStationAndLines(lon, lat) {
+            const sidePanel = document.getElementById('side-panel-area');
+            const url = `https://express.heartrails.com/api/json?method=getStations&x=${lon}&y=${lat}`;
+            fetch(url).then(r=>r.json()).then(d => {
+                const content = document.getElementById('train-info-content');
+                content.innerHTML = "";
+                if(!d.response || !d.response.station[0]) { 
+                    sidePanel.classList.remove('active'); 
+                    return; 
+                }
+                const st = d.response.station;
+                const name = st[0].name;
+                const lines = [...new Set(st.filter(s=>s.name===name).map(s=>s.line))];
+                sidePanel.classList.add('active');
+                
+                let h = `<div class="station-name">${name}駅</div>`;
+                lines.forEach(l => {
+                    h += `<div class="line-card"><div class="line-name">${l}</div>
+                    <div class="train-time-row"><span class="direction">上り</span><span class="time">00:15</span></div>
+                    <div class="train-time-row"><span class="direction">下り</span><span class="time">00:20</span></div></div>`;
+                });
+                h += `<div class="note">※デモ時刻です</div>`;
+                content.innerHTML = h;
+            }).catch(e => { console.error(e); });
+        }
+        
+        // 検索実行関数
+        async function searchSpotsAlongRoute() {
+        // 1. 準備
+            const type = document.getElementById('spot-select').value;
+            const listEl = document.getElementById('spot-list');
+            const msgEl = document.getElementById('spot-msg');
+    
+            msgEl.innerText = "経路沿いを探しています...";
+            listEl.innerHTML = "";
+            clearSpotMarkers();
+
+            if (!isNavigating || !currentRouteGeoJson) {
+                msgEl.innerText = "経路案内中のみ利用できます";
+                return;
+            }
+
+            // 2. 現在の地図範囲を取得 (全エリア検索は重すぎるため、表示範囲+αに絞る)
+            const bounds = map.getBounds();
+            // Overpass APIは [南, 西, 北, 東] の順
+            const bbox = `${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()}`;
+
+            // 3. Overpass API クエリ作成
+            // amenityタグを使って施設を特定します
+            const query = `
+                [out:json][timeout:25];
+                (
+                  node["amenity"="${type}"](${bbox});
+                  way["amenity"="${type}"](${bbox});
+                );
+                out center;
+            `;
+    
+            const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+
+            try {
+                const res = await fetch(url);
+                if(!res.ok) throw new Error("API Error");
+                const data = await res.json();
+        
+                const validSpots = [];
+
+                // 4. フィルタリング処理 (ここが重要)
+                // 取得した施設が、ルートの線から「200m以内」にあるか判定
+                const ROUTE_THRESHOLD_METERS = 200; 
+
+                data.elements.forEach(el => {
+                const lat = el.lat || el.center.lat;
+                const lon = el.lon || el.center.lon;
+                const name = el.tags.name || translateAmenity(type); // 名前がなければ種別名
+
+                // ルートからの最短距離を計算
+                const distInfo = getMinDistanceFromRoute(lat, lon, currentRouteGeoJson.coordinates);
+            
+                // 閾値以内で、かつ現在地より「先」にあるもの（簡易判定）を候補にする
+                // ※ここではシンプルに「ルートに近いか」だけで判定します
+                if (distInfo.distance <= ROUTE_THRESHOLD_METERS) {
+                    validSpots.push({
+                        lat: lat,
+                        lon: lon,
+                        name: name,
+                        distFromRoute: distInfo.distance
+                    });
+                }
+            });
+
+            // 5. 結果表示
+            if (validSpots.length === 0) {
+                msgEl.innerText = "この経路上には検索したものはありません";
+            } else {
+                msgEl.innerText = `${validSpots.length}件見つかりました`;
+            
+                // 現在地に近い順にソート（簡易的）
+                if(userLatLon) {
+                    validSpots.sort((a, b) => {
+                        return getDistance(userLatLon[1], userLatLon[0], a.lat, a.lon) - 
+                            getDistance(userLatLon[1], userLatLon[0], b.lat, b.lon);
+                    });
+                }
+
+                validSpots.forEach(spot => {
+                    // リストに追加
+                    const item = document.createElement('div');
+                    item.style.padding = "5px";
+                    item.style.borderBottom = "1px solid #eee";
+                    item.style.cursor = "pointer";
+                    item.innerHTML = `<b>${spot.name}</b> <span style="font-size:11px; color:#666;">ルートから${Math.round(spot.distFromRoute)}m</span>`;
+                    item.onclick = () => { map.flyTo({ center: [spot.lon, spot.lat], zoom: 16 }); };
+                    listEl.appendChild(item);
+
+                    // 地図にピン立て (黄色)
+                    const marker = new geolonia.Marker({ color: "#FFD700" })
+                        .setLngLat([spot.lon, spot.lat])
+                        .setPopup(new geolonia.Popup({ offset: 25 }).setText(spot.name))
+                        .addTo(map);
+                    spotMarkers.push(marker);
+                });
+            }
+
+        } catch (e) {
+            console.error(e);
+            msgEl.innerText = "検索エラーが発生しました";
+        }
+    }
+
+function clearSpotMarkers() {
+    spotMarkers.forEach(m => m.remove());
+    spotMarkers = [];
+}
+
+function translateAmenity(type) {
+    const dict = {
+        'convenience_store': 'コンビニ',
+        'post_office': '郵便局',
+        'parking': '駐車場',
+        'fuel': 'ガソリンスタンド',
+        'toilets': 'トイレ'
+    };
+    return dict[type] || '施設';
+}
+
+// 数学計算: 点(pLat, pLon) と ルート全体(lineCoords) の最短距離(m)を返す
+function getMinDistanceFromRoute(pLat, pLon, lineCoords) {
+    let minDist = Infinity;
+    
+    // ルートは点がいっぱいあるので、全線分との距離を測る
+    // ※高速化のため、本来はR-Treeなどを使いますが、この規模ならループでOK
+    for (let i = 0; i < lineCoords.length - 1; i++) {
+        const p1 = lineCoords[i];     // [lon, lat]
+        const p2 = lineCoords[i+1];   // [lon, lat]
+        
+        const d = getDistanceFromSegment(pLat, pLon, p1[1], p1[0], p2[1], p2[0]);
+        if (d < minDist) minDist = d;
+    }
+    return { distance: minDist };
+}
+
+// 数学計算: 点Pと線分ABの最短距離を計算
+function getDistanceFromSegment(pLat, pLon, aLat, aLon, bLat, bLon) {
+    // メルカトル図法的な簡易平面近似で計算（短距離なら誤差は無視できる）
+    // 緯度経度をメートル換算係数に
+    const ky = 111320; // 緯度1度あたりのm
+    const kx = 40075000 * Math.cos(pLat * Math.PI / 180) / 360; // 経度1度あたりのm
+
+    const x = pLon * kx;
+    const y = pLat * ky;
+    const x1 = aLon * kx;
+    const y1 = aLat * ky;
+    const x2 = bLon * kx;
+    const y2 = bLat * ky;
+
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len2 = dx*dx + dy*dy;
+
+    if (len2 === 0) return Math.sqrt((x-x1)**2 + (y-y1)**2);
+
+    // 線分への射影パラメータ t
+    let t = ((x - x1) * dx + (y - y1) * dy) / len2;
+    
+    // 線分の範囲内に収める
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+
+    // 最短点
+    const nearestX = x1 + t * dx;
+    const nearestY = y1 + t * dy;
+
+    // 距離
+    return Math.sqrt((x - nearestX)**2 + (y - nearestY)**2);
+}
+
+// 2点間の単純距離 (既存のコードになければ追加)
+function getDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371000; // 地球半径(m)
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+}
+
+
+
+    </script>
+</body>
+</html>
